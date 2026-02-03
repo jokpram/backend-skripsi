@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { sequelize } from '../models/index.js';
 import { generateQRCode } from '../utils/qr.js';
 
+const { Order, OrderItem, UdangProduk, BatchUdang, Tambak, Konsumen, Delivery, PaymentLog, Wallet, WalletTransaction } = models;
+
 export const createOrder = async (req, res) => {
     const t = await sequelize.transaction();
     try {
@@ -263,37 +265,37 @@ export const scanReceive = async (req, res) => {
         const totalAmount = parseFloat(order.total_harga); // product_subtotal + logistic_fee
 
         // Credit Logistik
-        const logistikWallet = await Wallet.findOne({ 
-            where: { owner_type: 'LOGISTIK', owner_id: delivery.logistik_id }, 
-            transaction: t, 
-            lock: t.LOCK.UPDATE 
+        const logistikWallet = await Wallet.findOne({
+            where: { owner_type: 'LOGISTIK', owner_id: delivery.logistik_id },
+            transaction: t,
+            lock: t.LOCK.UPDATE
         });
         if (logistikWallet) {
             logistikWallet.balance = parseFloat(logistikWallet.balance) + logisticFee;
             await logistikWallet.save({ transaction: t });
-            await WalletTransaction.create({ 
-                wallet_id: logistikWallet.id, 
-                type: 'CREDIT', 
-                amount: logisticFee, 
-                source: 'LOGISTIC_FEE', 
-                reference_id: `ORDER-${order.id}` 
+            await WalletTransaction.create({
+                wallet_id: logistikWallet.id,
+                type: 'CREDIT',
+                amount: logisticFee,
+                source: 'LOGISTIC_FEE',
+                reference_id: `ORDER-${order.id}`
             }, { transaction: t });
         }
 
         // Credit Petambak(s)
-        const items = await OrderItem.findAll({ 
-            where: { order_id: order.id }, 
+        const items = await OrderItem.findAll({
+            where: { order_id: order.id },
             include: { model: UdangProduk, include: { model: BatchUdang, include: Tambak } },
             transaction: t
         });
 
         // Calculate total product revenue (excluding logistics)
         const totalProductRevenue = totalAmount - logisticFee;
-        
+
         // Fairly distribute admin fee across items proportionally? 
         // Or just take it from the total surplus. 
         // Sisa untuk petambak = totalProductRevenue - adminFeePerOrder.
-        
+
         const netProductRevenue = totalProductRevenue - adminFeePerOrder;
 
         for (const item of items) {
@@ -302,20 +304,20 @@ export const scanReceive = async (req, res) => {
             const itemShare = parseFloat(item.subtotal) / totalProductRevenue;
             const payout = netProductRevenue * itemShare;
 
-            const petambakWallet = await Wallet.findOne({ 
-                where: { owner_type: 'PETAMBAK', owner_id: petambakId }, 
-                transaction: t, 
-                lock: t.LOCK.UPDATE 
+            const petambakWallet = await Wallet.findOne({
+                where: { owner_type: 'PETAMBAK', owner_id: petambakId },
+                transaction: t,
+                lock: t.LOCK.UPDATE
             });
             if (petambakWallet) {
                 petambakWallet.balance = parseFloat(petambakWallet.balance) + payout;
                 await petambakWallet.save({ transaction: t });
-                await WalletTransaction.create({ 
-                    wallet_id: petambakWallet.id, 
-                    type: 'CREDIT', 
-                    amount: payout, 
-                    source: 'ORDER', 
-                    reference_id: `ORDER-${order.id}-ITEM-${item.id}` 
+                await WalletTransaction.create({
+                    wallet_id: petambakWallet.id,
+                    type: 'CREDIT',
+                    amount: payout,
+                    source: 'ORDER',
+                    reference_id: `ORDER-${order.id}-ITEM-${item.id}`
                 }, { transaction: t });
             }
         }
@@ -327,12 +329,12 @@ export const scanReceive = async (req, res) => {
         if (adminWallet) {
             adminWallet.balance = parseFloat(adminWallet.balance) - totalReleased;
             await adminWallet.save({ transaction: t });
-            await WalletTransaction.create({ 
-                wallet_id: adminWallet.id, 
-                type: 'DEBIT', 
-                amount: totalReleased, 
-                source: 'ORDER_RELEASE', 
-                reference_id: `RELEASE-${order.id}` 
+            await WalletTransaction.create({
+                wallet_id: adminWallet.id,
+                type: 'DEBIT',
+                amount: totalReleased,
+                source: 'ORDER_RELEASE',
+                reference_id: `RELEASE-${order.id}`
             }, { transaction: t });
         }
 
@@ -376,6 +378,122 @@ export const getOrderQR = async (req, res) => {
         } else {
             res.status(404).json({ message: 'QR Not available' });
         }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Get orders for konsumen
+export const getMyOrders = async (req, res) => {
+    try {
+        const orders = await Order.findAll({
+            where: { konsumen_id: req.user.id },
+            include: [
+                { model: OrderItem, include: [{ model: UdangProduk }] },
+                { model: Delivery }
+            ],
+            order: [['created_at', 'DESC']]
+        });
+        res.json(orders);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Get deliveries for logistik
+export const getMyDeliveries = async (req, res) => {
+    try {
+        const deliveries = await Delivery.findAll({
+            where: { logistik_id: req.user.id },
+            include: [{
+                model: Order,
+                include: [
+                    { model: Konsumen, attributes: ['name', 'phone', 'address'] },
+                    { model: OrderItem }
+                ]
+            }],
+            order: [['created_at', 'DESC']]
+        });
+        res.json(deliveries);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Get available deliveries for logistik to pick
+export const getAvailableDeliveries = async (req, res) => {
+    try {
+        const deliveries = await Delivery.findAll({
+            where: { status: 'PENDING', logistik_id: null },
+            include: [{
+                model: Order,
+                include: [
+                    { model: Konsumen, attributes: ['name', 'address'] },
+                    {
+                        model: OrderItem,
+                        include: [{
+                            model: UdangProduk,
+                            include: [{
+                                model: BatchUdang,
+                                include: [{ model: Tambak, attributes: ['nama_tambak', 'lokasi'] }]
+                            }]
+                        }]
+                    }
+                ]
+            }],
+            order: [['created_at', 'ASC']]
+        });
+        res.json(deliveries);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Get orders for petambak (orders containing their products)
+export const getPetambakOrders = async (req, res) => {
+    try {
+        const petambakId = req.user.id;
+
+        // Find all tambaks owned by this petambak
+        const tambaks = await Tambak.findAll({ where: { petambak_id: petambakId } });
+        const tambakIds = tambaks.map(t => t.id);
+
+        // Find batches from those tambaks
+        const batches = await BatchUdang.findAll({ where: { tambak_id: tambakIds } });
+        const batchIds = batches.map(b => b.id);
+
+        // Find products from those batches
+        const products = await UdangProduk.findAll({ where: { batch_id: batchIds } });
+        const productIds = products.map(p => p.id);
+
+        // Find order items containing those products
+        const orderItems = await OrderItem.findAll({
+            where: { produk_id: productIds },
+            include: [
+                { model: UdangProduk },
+                {
+                    model: Order,
+                    include: [
+                        { model: Konsumen, attributes: ['name', 'address'] },
+                        { model: Delivery }
+                    ]
+                }
+            ]
+        });
+
+        // Group by order
+        const ordersMap = {};
+        for (const item of orderItems) {
+            if (!ordersMap[item.order_id]) {
+                ordersMap[item.order_id] = {
+                    ...item.Order.toJSON(),
+                    items: []
+                };
+            }
+            ordersMap[item.order_id].items.push(item.toJSON());
+        }
+
+        res.json(Object.values(ordersMap));
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

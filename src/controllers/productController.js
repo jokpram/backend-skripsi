@@ -65,3 +65,49 @@ export const getProducts = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
+
+// Traceability - Get batch info for tracing
+export const getBatchTrace = async (req, res) => {
+    try {
+        const { batchId } = req.params;
+
+        const batch = await BatchUdang.findByPk(batchId, {
+            include: [{
+                model: Tambak,
+                include: [{ model: Petambak, attributes: ['name', 'address'] }]
+            }]
+        });
+
+        if (!batch) {
+            return res.status(404).json({ message: 'Batch tidak ditemukan' });
+        }
+
+        // Calculate hash for integrity check
+        const crypto = await import('crypto');
+        const dataToHash = `${batch.tambak_id}${batch.tanggal_tebar}${batch.tanggal_panen || ''}${batch.kualitas_air_ph}${batch.kualitas_air_salinitas}`;
+        const currentHash = crypto.createHash('sha256').update(dataToHash).digest('hex');
+        const integrity = currentHash === batch.blockchain_hash ? 'VALID' : 'DATA TAMPERED';
+
+        res.json({
+            batch: {
+                id: batch.id,
+                tanggal_tebar: batch.tanggal_tebar,
+                tanggal_panen: batch.tanggal_panen,
+                usia_bibit_hari: batch.usia_bibit_hari,
+                asal_bibit: batch.asal_bibit,
+                kualitas_air_ph: batch.kualitas_air_ph,
+                kualitas_air_salinitas: batch.kualitas_air_salinitas,
+                estimasi_panen_kg: batch.estimasi_panen_kg,
+                blockchain_hash: batch.blockchain_hash
+            },
+            tambak: {
+                nama_tambak: batch.Tambak.nama_tambak,
+                lokasi: batch.Tambak.lokasi,
+                petambak_name: batch.Tambak.Petambak?.name || 'Unknown'
+            },
+            integrity
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};

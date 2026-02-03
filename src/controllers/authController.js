@@ -109,7 +109,13 @@ const loginUser = async (req, res, RoleModel, roleName) => {
         const { email, password } = req.body;
         const user = await RoleModel.findOne({ where: { email } });
 
-        if (user && (await bcrypt.compare(password, user.password))) { // Or user.validatePassword(password)
+        if (!user) {
+            return res.status(401).json({ message: 'Invalid email or password' });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+
+        if (isMatch) {
             res.json({
                 id: user.id,
                 name: user.name,
@@ -121,6 +127,7 @@ const loginUser = async (req, res, RoleModel, roleName) => {
             res.status(401).json({ message: 'Invalid email or password' });
         }
     } catch (error) {
+        console.error('Login Error:', error);
         res.status(500).json({ message: error.message });
     }
 };

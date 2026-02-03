@@ -12,18 +12,19 @@ const calculateHash = (batch) => {
 export const createTambak = async (req, res) => {
     try {
         const { nama_tambak, lokasi, luas_m2, kapasitas_maks_kg, latitude, longitude } = req.body;
-        // Assume req.user.id is Petambak ID
+
         const tambak = await Tambak.create({
             petambak_id: req.user.id,
             nama_tambak,
             lokasi,
             luas_m2,
             kapasitas_maks_kg,
-            latitude,
-            longitude
+            latitude: latitude || 0,
+            longitude: longitude || 0
         });
         res.status(201).json(tambak);
     } catch (error) {
+        console.error('Create Tambak Error:', error);
         res.status(500).json({ message: error.message });
     }
 };
