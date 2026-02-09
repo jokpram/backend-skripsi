@@ -83,8 +83,21 @@ export const getBatchTrace = async (req, res) => {
         }
 
         // Calculate hash for integrity check
+        // Calculate hash for integrity check
         const crypto = await import('crypto');
-        const dataToHash = `${batch.tambak_id}${batch.tanggal_tebar}${batch.tanggal_panen || ''}${batch.kualitas_air_ph}${batch.kualitas_air_salinitas}`;
+
+        // Hash calculation must match model hook exactly
+        // const dataHeader = `${batch.tambak_id}${batch.tanggal_tebar}${batch.tanggal_panen || ''}`;
+        // const dataBody = `${batch.usia_bibit_hari}${batch.asal_bibit}${batch.kualitas_air_ph}${batch.kualitas_air_salinitas}${batch.estimasi_panen_kg}`;
+        // const dataToHash = `${batch.previous_hash}${dataHeader}${dataBody}`;
+
+        const dataHeader = `${batch.tambak_id}${batch.tanggal_tebar}${batch.tanggal_panen || ''}`;
+        const dataBody = `${batch.usia_bibit_hari}${batch.asal_bibit}${batch.kualitas_air_ph}${batch.kualitas_air_salinitas}${batch.estimasi_panen_kg}`;
+
+        // Ensure previous_hash is handled correctly if it was 'GENESIS_BLOCK' or from DB
+        const prevHash = batch.previous_hash;
+        const dataToHash = `${prevHash}${dataHeader}${dataBody}`;
+
         const currentHash = crypto.createHash('sha256').update(dataToHash).digest('hex');
         const integrity = currentHash === batch.blockchain_hash ? 'VALID' : 'DATA TAMPERED';
 

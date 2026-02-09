@@ -42,11 +42,14 @@ app.use('/api/tambak', tambakRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/wallet', walletRoutes);
-
 app.get('/', (req, res) => {
     res.send('CRONOS Backend is running');
 });
+
+import reportRoutes from './routes/reportRoutes.js';
+app.use('/api/reports', reportRoutes);
+
+app.use('/api/wallet', walletRoutes);
 
 
 

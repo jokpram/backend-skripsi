@@ -47,6 +47,10 @@ const BatchUdang = sequelize.define('BatchUdang', {
     blockchain_tx_hash: {
         type: DataTypes.STRING,
         allowNull: true
+    },
+    previous_hash: {
+        type: DataTypes.STRING,
+        allowNull: true
     }
 }, {
     tableName: 'batch_udang',
@@ -54,10 +58,24 @@ const BatchUdang = sequelize.define('BatchUdang', {
     createdAt: 'created_at',
     updatedAt: 'updated_at',
     hooks: {
-        beforeSave: (batch) => {
+        beforeSave: async (batch) => {
+            // Find previous batch for the same tambak to chain hashes
+            if (!batch.previous_hash) {
+                const previousBatch = await BatchUdang.findOne({
+                    where: { tambak_id: batch.tambak_id },
+                    order: [['created_at', 'DESC']],
+                    attributes: ['blockchain_hash']
+                });
+                batch.previous_hash = previousBatch ? previousBatch.blockchain_hash : 'GENESIS_BLOCK';
+            }
+
             // Calculate Hash
-            // blockchain_hash = SHA256(tambak_id + tanggal_tebar + tanggal_panen + kualitas_air)
-            const dataToHash = `${batch.tambak_id}${batch.tanggal_tebar}${batch.tanggal_panen || ''}${batch.kualitas_air_ph}${batch.kualitas_air_salinitas}`;
+            // blockchain_hash = SHA256(index + previous_hash + timestamp + data)
+            // Data includes: tambak_id, tanggal_tebar, tanggal_panen, usia_bibit, asal_bibit, kualitas_air, estimasi_panen
+            const dataHeader = `${batch.tambak_id}${batch.tanggal_tebar}${batch.tanggal_panen || ''}`;
+            const dataBody = `${batch.usia_bibit_hari}${batch.asal_bibit}${batch.kualitas_air_ph}${batch.kualitas_air_salinitas}${batch.estimasi_panen_kg}`;
+            const dataToHash = `${batch.previous_hash}${dataHeader}${dataBody}`;
+
             batch.blockchain_hash = crypto.createHash('sha256').update(dataToHash).digest('hex');
         }
     }
