@@ -32,14 +32,7 @@ const Konsumen = sequelize.define('Konsumen', {
         type: DataTypes.STRING,
         allowNull: true
     },
-    latitude: {
-        type: DataTypes.FLOAT,
-        allowNull: true
-    },
-    longitude: {
-        type: DataTypes.FLOAT,
-        allowNull: true
-    },
+
     profile_photo: {
         type: DataTypes.STRING,
         allowNull: true

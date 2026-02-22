@@ -10,7 +10,7 @@ const generateToken = (id, role) => {
     });
 };
 
-// --- Register ---
+// --- Registrasi ---
 
 export const registerAdmin = async (req, res) => {
     try {
@@ -20,7 +20,7 @@ export const registerAdmin = async (req, res) => {
 
         const user = await Admin.create({ name, email, password });
 
-        // Create Wallet for Admin
+        // Buat Dompet untuk Admin
         await Wallet.create({ owner_type: 'ADMIN', owner_id: user.id });
 
         res.status(201).json({
@@ -37,13 +37,20 @@ export const registerAdmin = async (req, res) => {
 
 export const registerPetambak = async (req, res) => {
     try {
-        const { name, email, password, phone, address } = req.body;
+        const { name, email, password, phone, address, nik, npwp, bank_name, bank_account_number, bank_account_name } = req.body;
         const userExists = await Petambak.findOne({ where: { email } });
         if (userExists) return res.status(400).json({ message: 'User already exists' });
 
-        const user = await Petambak.create({ name, email, password, phone, address });
+        const userData = { name, email, password, phone, address, nik, npwp, bank_name, bank_account_number, bank_account_name };
 
-        // Create Wallet for Petambak
+        // Tangani File jika diunggah
+        if (req.files) {
+            if (req.files.foto_ktp) userData.foto_ktp = req.files.foto_ktp[0].path;
+            if (req.files.foto_tambak) userData.foto_tambak = req.files.foto_tambak[0].path;
+        }
+
+        const user = await Petambak.create(userData);
+
         await Wallet.create({ owner_type: 'PETAMBAK', owner_id: user.id });
 
         res.status(201).json({
@@ -60,13 +67,18 @@ export const registerPetambak = async (req, res) => {
 
 export const registerLogistik = async (req, res) => {
     try {
-        const { name, email, password, phone, vehicle_type, license_plate } = req.body;
+        const { name, email, password, phone, vehicle_type, license_plate, vehicle_capacity_kg, driver_name, driver_license_number, is_cold_storage } = req.body;
         const userExists = await Logistik.findOne({ where: { email } });
         if (userExists) return res.status(400).json({ message: 'User already exists' });
 
-        const user = await Logistik.create({ name, email, password, phone, vehicle_type, license_plate });
+        const userData = { name, email, password, phone, vehicle_type, license_plate, vehicle_capacity_kg, driver_name, driver_license_number, is_cold_storage };
 
-        // Create Wallet for Logistik
+        if (req.files) {
+            if (req.files.stnk_photo) userData.stnk_photo = req.files.stnk_photo[0].path;
+        }
+
+        const user = await Logistik.create(userData);
+
         await Wallet.create({ owner_type: 'LOGISTIK', owner_id: user.id });
 
         res.status(201).json({
@@ -83,12 +95,12 @@ export const registerLogistik = async (req, res) => {
 
 export const registerKonsumen = async (req, res) => {
     try {
-        const { name, email, password, phone, address, latitude, longitude } = req.body;
+        const { name, email, password, phone, address } = req.body;
         const userExists = await Konsumen.findOne({ where: { email } });
         if (userExists) return res.status(400).json({ message: 'User already exists' });
 
-        const user = await Konsumen.create({ name, email, password, phone, address, latitude, longitude });
-        // Konsumen doesn't necessarily need a wallet in this system description ("Petambak & Logistik memiliki wallet internal... Semua pembayaran masuk Escrow Admin"), but maybe needed for refunds? Prompt didn't specify wallet for Konsumen, but "Petambak & Logistik memiliki wallet internal" implies Konsumen might not. I won't create one for Konsumen for now.
+        const user = await Konsumen.create({ name, email, password, phone, address });
+        // Konsumen tidak selalu membutuhkan dompet dalam deskripsi sistem ini ("Petambak & Logistik memiliki wallet internal... Semua pembayaran masuk Escrow Admin"), tetapi mungkin diperlukan untuk pengembalian dana? Prompt tidak menentukan dompet untuk Konsumen, tetapi "Petambak & Logistik memiliki wallet internal" menyiratkan Konsumen mungkin tidak. Saya tidak akan membuatnya untuk Konsumen saat ini.
 
         res.status(201).json({
             id: user.id,
@@ -102,7 +114,7 @@ export const registerKonsumen = async (req, res) => {
     }
 };
 
-// --- Login ---
+// --- Masuk ---
 
 const loginUser = async (req, res, RoleModel, roleName) => {
     try {
@@ -137,10 +149,10 @@ export const loginPetambak = (req, res) => loginUser(req, res, Petambak, 'petamb
 export const loginLogistik = (req, res) => loginUser(req, res, Logistik, 'logistik');
 export const loginKonsumen = (req, res) => loginUser(req, res, Konsumen, 'konsumen');
 
-// --- Profile ---
+// --- Profil ---
 
 export const getProfile = async (req, res) => {
-    // req.user is set by middleware
+    // req.user diatur oleh middleware
     const { id, role } = req.user;
     let user;
     if (role === 'admin') user = await Admin.findByPk(id, { attributes: { exclude: ['password'] } });
@@ -156,8 +168,8 @@ export const updateProfile = async (req, res) => {
     const { id, role } = req.user;
     const updates = req.body;
 
-    // Logic to prevent updating critical fields if necessary
-    // Handle photo upload if file present
+    // Logika untuk mencegah pembaruan bidang penting jika diperlukan
+    // Tangani unggahan foto jika file ada
     if (req.file) {
         if (role === 'petambak' && req.body.type === 'etalase') {
             updates.etalase_photo = req.file.path;

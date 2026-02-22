@@ -26,6 +26,10 @@ const OrderItem = sequelize.define('OrderItem', {
     subtotal: {
         type: DataTypes.DECIMAL(12, 2),
         allowNull: false
+    },
+    catatan: {
+        type: DataTypes.TEXT,
+        allowNull: true
     }
 }, {
     tableName: 'order_items',

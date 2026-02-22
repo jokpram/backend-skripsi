@@ -13,8 +13,10 @@ import Wallet from './Wallet.js';
 import WalletTransaction from './WalletTransaction.js';
 import Delivery from './Delivery.js';
 import WithdrawRequest from './WithdrawRequest.js';
+import ChangeRequest from './ChangeRequest.js';
+import Message from './Message.js';
 
-// Associations
+// Asosiasi
 
 // Petambak -> Tambak
 Petambak.hasMany(Tambak, { foreignKey: 'petambak_id' });
@@ -74,7 +76,9 @@ const models = {
     Wallet,
     WalletTransaction,
     Delivery,
-    WithdrawRequest
+    WithdrawRequest,
+    ChangeRequest,
+    Message
 };
 
 export { sequelize };

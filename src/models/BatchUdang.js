@@ -40,6 +40,45 @@ const BatchUdang = sequelize.define('BatchUdang', {
         type: DataTypes.INTEGER,
         allowNull: false
     },
+    // Enhanced Fields
+    kode_batch: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        unique: true
+    },
+    jumlah_bibit: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
+    sertifikat_bibit: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    kualitas_air_suhu: {
+        type: DataTypes.FLOAT,
+        allowNull: true
+    },
+    kualitas_air_do: {
+        type: DataTypes.FLOAT, // Dissolved Oxygen
+        allowNull: true
+    },
+    jenis_pakan: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    frekuensi_pakan_per_hari: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
+    catatan: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    status: {
+        type: DataTypes.STRING,
+        defaultValue: 'ACTIVE' // ACTIVE, HARVESTED, CANCELLED
+    },
+    // Blockchain & System
     blockchain_hash: {
         type: DataTypes.STRING,
         allowNull: true
@@ -50,6 +89,14 @@ const BatchUdang = sequelize.define('BatchUdang', {
     },
     previous_hash: {
         type: DataTypes.STRING,
+        allowNull: true
+    },
+    total_umur_panen_hari: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
+    metadata: {
+        type: DataTypes.JSON,
         allowNull: true
     }
 }, {
@@ -66,15 +113,15 @@ const BatchUdang = sequelize.define('BatchUdang', {
                     order: [['created_at', 'DESC']],
                     attributes: ['blockchain_hash']
                 });
-                batch.previous_hash = previousBatch ? previousBatch.blockchain_hash : 'GENESIS_BLOCK';
+                batch.previous_hash = previousBatch && previousBatch.blockchain_hash ? previousBatch.blockchain_hash : 'GENESIS_BLOCK';
             }
 
             // Calculate Hash
-            // blockchain_hash = SHA256(index + previous_hash + timestamp + data)
-            // Data includes: tambak_id, tanggal_tebar, tanggal_panen, usia_bibit, asal_bibit, kualitas_air, estimasi_panen
-            const dataHeader = `${batch.tambak_id}${batch.tanggal_tebar}${batch.tanggal_panen || ''}`;
-            const dataBody = `${batch.usia_bibit_hari}${batch.asal_bibit}${batch.kualitas_air_ph}${batch.kualitas_air_salinitas}${batch.estimasi_panen_kg}`;
-            const dataToHash = `${batch.previous_hash}${dataHeader}${dataBody}`;
+            // blockchain_hash = SHA256(index + previous_hash + timestamp + data + extended_data)
+            const dataHeader = `${batch.tambak_id}${batch.tanggal_tebar}${batch.tanggal_panen || ''}${batch.kode_batch || ''}`;
+            const dataBody = `${batch.usia_bibit_hari}${batch.asal_bibit}${batch.kualitas_air_ph}${batch.kualitas_air_salinitas}${batch.estimasi_panen_kg}${batch.total_umur_panen_hari || ''}`;
+            const dataExtended = `${batch.jumlah_bibit || ''}${batch.sertifikat_bibit || ''}${batch.kualitas_air_suhu || ''}${batch.kualitas_air_do || ''}${batch.jenis_pakan || ''}${batch.frekuensi_pakan_per_hari || ''}${batch.catatan || ''}`;
+            const dataToHash = `${batch.previous_hash}${dataHeader}${dataBody}${dataExtended}`;
 
             batch.blockchain_hash = crypto.createHash('sha256').update(dataToHash).digest('hex');
         }

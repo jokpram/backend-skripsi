@@ -29,6 +29,34 @@ const Petambak = sequelize.define('Petambak', {
         allowNull: true
     },
     address: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    nik: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    npwp: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    foto_ktp: {
+        type: DataTypes.STRING, // Path to file
+        allowNull: true
+    },
+    foto_tambak: {
+        type: DataTypes.STRING, // Path to file
+        allowNull: true
+    },
+    bank_name: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    bank_account_number: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    bank_account_name: {
         type: DataTypes.STRING,
         allowNull: true
     },
@@ -41,8 +69,12 @@ const Petambak = sequelize.define('Petambak', {
         allowNull: true
     },
     status: {
-        type: DataTypes.ENUM('pending', 'approved', 'rejected'),
-        defaultValue: 'pending'
+        type: DataTypes.STRING,
+        defaultValue: 'pending' // pending, approved, rejected, suspended
+    },
+    metadata: {
+        type: DataTypes.JSON,
+        allowNull: true // Store extra info like IP, device, etc.
     }
 }, {
     hooks: {

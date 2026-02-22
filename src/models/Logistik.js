@@ -40,9 +40,37 @@ const Logistik = sequelize.define('Logistik', {
         type: DataTypes.STRING,
         allowNull: true
     },
+    vehicle_capacity_kg: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
+    driver_name: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    driver_license_number: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    stnk_photo: {
+        type: DataTypes.STRING, // Path to file
+        allowNull: true
+    },
+    is_cold_storage: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    shipping_cost_per_km: {
+        type: DataTypes.DECIMAL(10, 2),
+        defaultValue: 10000
+    },
     status: {
-        type: DataTypes.ENUM('pending', 'approved', 'rejected'),
-        defaultValue: 'pending'
+        type: DataTypes.STRING,
+        defaultValue: 'pending' // pending, approved, suspended
+    },
+    metadata: {
+        type: DataTypes.JSON,
+        allowNull: true
     }
 }, {
     hooks: {

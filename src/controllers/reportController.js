@@ -16,7 +16,7 @@ const {
 
 export const generateAdminReport = async (req, res) => {
     try {
-        // Collect Data
+        // Kumpulkan Data
         const totalPetambak = await Petambak.count();
         const totalLogistik = await Logistik.count();
         const totalKonsumen = await Konsumen.count();
@@ -27,13 +27,13 @@ export const generateAdminReport = async (req, res) => {
 
         const products = await UdangProduk.sum('stok_kg') || 0;
 
-        // Calculate Revenue (Assuming total_amount in Order is revenue)
+        // Hitung Pendapatan (Asumsikan total_amount dalam Pesanan adalah pendapatan)
         const revenueData = await Order.sum('total_amount', { where: { status: 'COMPLETED' } }) || 0;
 
-        // Create PDF
+        // Buat PDF
         const doc = new PDFDocument({ margin: 50 });
 
-        // Set Headers
+        // Atur Header
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'attachment; filename=Laporan_Admin_CRONOS.pdf');
 
@@ -47,7 +47,7 @@ export const generateAdminReport = async (req, res) => {
         doc.moveTo(50, 150).lineTo(550, 150).stroke();
         doc.moveDown();
 
-        // 1. User Statistics
+        // 1. Statistik Pengguna
         doc.fontSize(16).text('Statistik Pengguna', { underline: true });
         doc.moveDown(0.5);
         doc.fontSize(12).text(`- Petambak Terdaftar: ${totalPetambak}`);
@@ -55,14 +55,14 @@ export const generateAdminReport = async (req, res) => {
         doc.text(`- Konsumen Aktif: ${totalKonsumen}`);
         doc.moveDown();
 
-        // 2. Production Statistics
+        // 2. Statistik Produksi
         doc.fontSize(16).text('Statistik Produksi', { underline: true });
         doc.moveDown(0.5);
         doc.fontSize(12).text(`- Total Tambak: ${totalTambak}`);
         doc.text(`- Stok Udang Tersedia: ${products} Kg`);
         doc.moveDown();
 
-        // 3. Transaction Summary
+        // 3. Ringkasan Transaksi
         doc.fontSize(16).text('Ringkasan Transaksi', { underline: true });
         doc.moveDown(0.5);
         doc.fontSize(12).text(`- Total Order Masuk: ${totalOrders}`);

@@ -10,7 +10,16 @@ const { Order, OrderItem, UdangProduk, BatchUdang, Tambak, Konsumen, Delivery, P
 export const createOrder = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const { items } = req.body; // [{ produk_id: 1, qty: 10 }]
+        const {
+            items,
+            delivery_method,
+            delivery_address,
+            delivery_note,
+            payment_method,
+            insurance,
+            expected_delivery_date
+        } = req.body;
+
         const konsumenId = req.user.id;
         const konsumen = await Konsumen.findByPk(konsumenId);
 
@@ -21,12 +30,21 @@ export const createOrder = async (req, res) => {
         const productsInfo = [];
         let originTambak = null;
 
+        const productIds = items.map(item => item.produk_id);
+        const products = await UdangProduk.findAll({
+            where: { id: productIds },
+            include: { model: BatchUdang, include: Tambak },
+            transaction: t,
+            lock: t.LOCK.UPDATE
+        });
+
+        const productMap = new Map();
+        for (const p of products) {
+            productMap.set(p.id, p);
+        }
+
         for (const item of items) {
-            const product = await UdangProduk.findByPk(item.produk_id, {
-                include: { model: BatchUdang, include: Tambak },
-                transaction: t,
-                lock: t.LOCK.UPDATE
-            });
+            const product = productMap.get(item.produk_id);
             if (!product) {
                 await t.rollback();
                 return res.status(404).json({ message: `Product ${item.produk_id} not found` });
@@ -36,45 +54,57 @@ export const createOrder = async (req, res) => {
                 return res.status(400).json({ message: `Stock insufficient for ${product.jenis_udang} (Grade ${product.grade}). Available: ${product.stok_kg}kg` });
             }
 
+            if (!originTambak) {
+                originTambak = product.BatchUdang.Tambak;
+            } else if (originTambak.id !== product.BatchUdang.Tambak.id) {
+                await t.rollback();
+                return res.status(400).json({ message: 'All items in an order must be from the same Tambak location for valid shipping calculation.' });
+            }
+
             totalHargaBarang += (parseFloat(product.harga_per_kg) * item.qty);
             totalBerat += item.qty;
-            productsInfo.push({ product, qty: item.qty });
+            productsInfo.push({ product, qty: item.qty, catatan: item.catatan });
 
-            // Deduct Stock immediately to reserve it
+            // Kurangi Stok segera untuk mereservasinya
             product.stok_kg -= item.qty;
             if (product.stok_kg === 0) product.status = 'SOLD_OUT';
             await product.save({ transaction: t });
-
-            if (!originTambak) originTambak = product.BatchUdang.Tambak;
         }
 
-        if (originTambak && konsumen.latitude && konsumen.longitude) {
-            totalJarak = calculateDistance(originTambak.latitude, originTambak.longitude, konsumen.latitude, konsumen.longitude);
-        } else {
-            totalJarak = 10; // Fallback distance
-        }
+        // Default jarak karena fitur koordinat dihapus
+        totalJarak = 10;
 
         const biayaLogistik = Math.ceil(totalJarak / 5) * 10000;
-        const subtotal = totalHargaBarang + biayaLogistik;
+        let subtotal = totalHargaBarang + biayaLogistik;
+
+        if (insurance) {
+            subtotal += (totalHargaBarang * 0.01); // Biaya asuransi 1%
+        }
 
         const order = await Order.create({
             konsumen_id: konsumenId,
             status: 'PENDING',
             total_harga: subtotal,
             total_jarak_km: totalJarak,
-            total_biaya_logistik: biayaLogistik
+            total_biaya_logistik: biayaLogistik,
+            delivery_method,
+            delivery_address: delivery_address || konsumen.address,
+            delivery_note,
+            payment_method,
+            insurance,
+            expected_delivery_date
         }, { transaction: t });
 
-        // Create Items
-        for (const info of productsInfo) {
-            await OrderItem.create({
-                order_id: order.id,
-                produk_id: info.product.id,
-                qty_kg: info.qty,
-                harga_per_kg: info.product.harga_per_kg,
-                subtotal: info.product.harga_per_kg * info.qty
-            }, { transaction: t });
-        }
+        // Buat Item
+        const orderItemsToCreate = productsInfo.map(info => ({
+            order_id: order.id,
+            produk_id: info.product.id,
+            qty_kg: info.qty,
+            harga_per_kg: info.product.harga_per_kg,
+            subtotal: info.product.harga_per_kg * info.qty,
+            catatan: info.catatan
+        }));
+        await OrderItem.bulkCreate(orderItemsToCreate, { transaction: t });
 
         await t.commit();
         res.status(201).json({ order, items: productsInfo, logistics: { distance: totalJarak, cost: biayaLogistik } });
@@ -127,13 +157,13 @@ export const midtransNotification = async (req, res) => {
 
         if (transaction_status === 'capture' || transaction_status === 'settlement') {
             if (fraud_status === 'challenge') {
-                // handle challenge if needed
+                // tangani tantangan jika diperlukan
             } else {
                 if (order.status === 'PENDING') {
                     order.status = 'PAID';
                     await order.save({ transaction: t });
 
-                    // Log Payment
+                    // Catat Pembayaran
                     await PaymentLog.create({
                         order_id: order.id,
                         midtrans_order_id: midtransOrderId,
@@ -144,7 +174,7 @@ export const midtransNotification = async (req, res) => {
                         raw_callback_json: JSON.stringify(notificationJson)
                     }, { transaction: t });
 
-                    // Admin Escrow Logic
+                    // Logika Escrow Admin
                     const adminWallet = await Wallet.findOne({ where: { owner_type: 'ADMIN' }, transaction: t, lock: t.LOCK.UPDATE });
                     if (adminWallet) {
                         adminWallet.balance = parseFloat(adminWallet.balance) + parseFloat(gross_amount);
@@ -159,7 +189,7 @@ export const midtransNotification = async (req, res) => {
                         }, { transaction: t });
                     }
 
-                    // Create Delivery record
+                    // Buat catatan Pengiriman
                     await Delivery.create({
                         order_id: order.id,
                         status: 'PENDING',
@@ -175,7 +205,7 @@ export const midtransNotification = async (req, res) => {
                 order.status = 'CANCELLED';
                 await order.save({ transaction: t });
 
-                // Return Stock
+                // Kembalikan Stok
                 const items = await OrderItem.findAll({ where: { order_id: order.id }, transaction: t });
                 for (const item of items) {
                     const product = await UdangProduk.findByPk(item.produk_id, { transaction: t, lock: t.LOCK.UPDATE });
@@ -252,19 +282,19 @@ export const scanReceive = async (req, res) => {
             return res.status(400).json({ message: 'Order not picked up yet' });
         }
 
-        // 1. Update Statuses
+        // 1. Perbarui Status
         delivery.status = 'DELIVERED';
         await delivery.save({ transaction: t });
 
         order.status = 'COMPLETED';
         await order.save({ transaction: t });
 
-        // 2. Distribute Funds
+        // 2. Distribusikan Dana
         const adminFeePerOrder = 2500;
         const logisticFee = parseFloat(delivery.biaya_logistik);
-        const totalAmount = parseFloat(order.total_harga); // product_subtotal + logistic_fee
+        const totalAmount = parseFloat(order.total_harga); // subtotal_produk + biaya_logistik
 
-        // Credit Logistik
+        // Kredit Logistik
         const logistikWallet = await Wallet.findOne({
             where: { owner_type: 'LOGISTIK', owner_id: delivery.logistik_id },
             transaction: t,
@@ -282,48 +312,52 @@ export const scanReceive = async (req, res) => {
             }, { transaction: t });
         }
 
-        // Credit Petambak(s)
+        // Kredit Petambak
         const items = await OrderItem.findAll({
             where: { order_id: order.id },
             include: { model: UdangProduk, include: { model: BatchUdang, include: Tambak } },
             transaction: t
         });
 
-        // Calculate total product revenue (excluding logistics)
+        // Hitung total pendapatan produk (tidak termasuk logistik)
         const totalProductRevenue = totalAmount - logisticFee;
 
-        // Fairly distribute admin fee across items proportionally? 
-        // Or just take it from the total surplus. 
+        // Distribusikan biaya admin secara adil ke seluruh item secara proporsional? 
+        // Atau ambil saja dari total surplus. 
         // Sisa untuk petambak = totalProductRevenue - adminFeePerOrder.
 
         const netProductRevenue = totalProductRevenue - adminFeePerOrder;
 
+        const petambakPayouts = {};
         for (const item of items) {
             const petambakId = item.UdangProduk.BatchUdang.Tambak.petambak_id;
-            // Proportional payout based on item subtotal relative to totalProductRevenue
             const itemShare = parseFloat(item.subtotal) / totalProductRevenue;
             const payout = netProductRevenue * itemShare;
-
-            const petambakWallet = await Wallet.findOne({
-                where: { owner_type: 'PETAMBAK', owner_id: petambakId },
-                transaction: t,
-                lock: t.LOCK.UPDATE
-            });
-            if (petambakWallet) {
-                petambakWallet.balance = parseFloat(petambakWallet.balance) + payout;
-                await petambakWallet.save({ transaction: t });
-                await WalletTransaction.create({
-                    wallet_id: petambakWallet.id,
-                    type: 'CREDIT',
-                    amount: payout,
-                    source: 'ORDER',
-                    reference_id: `ORDER-${order.id}-ITEM-${item.id}`
-                }, { transaction: t });
-            }
+            petambakPayouts[petambakId] = (petambakPayouts[petambakId] || 0) + payout;
         }
 
-        // Debit Admin (Escrow Release)
-        // Admin keeps the adminFeePerOrder. Admin released (logisticFee + netProductRevenue)
+        const petambakIds = Object.keys(petambakPayouts);
+        const petambakWallets = await Wallet.findAll({
+            where: { owner_type: 'PETAMBAK', owner_id: petambakIds },
+            transaction: t,
+            lock: t.LOCK.UPDATE
+        });
+
+        for (const petambakWallet of petambakWallets) {
+            const payout = petambakPayouts[petambakWallet.owner_id];
+            petambakWallet.balance = parseFloat(petambakWallet.balance) + payout;
+            await petambakWallet.save({ transaction: t });
+            await WalletTransaction.create({
+                wallet_id: petambakWallet.id,
+                type: 'CREDIT',
+                amount: payout,
+                source: 'ORDER',
+                reference_id: `ORDER-${order.id}-PETAMBAK-${petambakWallet.owner_id}`
+            }, { transaction: t });
+        }
+
+        // Debit Admin (Rilis Escrow)
+        // Admin menyimpan adminFeePerOrder. Admin merilis (logisticFee + netProductRevenue)
         const totalReleased = logisticFee + netProductRevenue;
         const adminWallet = await Wallet.findOne({ where: { owner_type: 'ADMIN' }, transaction: t, lock: t.LOCK.UPDATE });
         if (adminWallet) {
@@ -366,6 +400,11 @@ export const getOrderQR = async (req, res) => {
             if (delivery.logistik_id && delivery.logistik_id !== userId) {
                 return res.status(403).json({ message: 'Not your delivery' });
             }
+            // Provide receive token for logistik context as usually they scan pickup and show receive
+            qrData = delivery.receive_qr_token;
+            type = 'RECEIVE';
+        } else if (userRole === 'konsumen') {
+            // Provide receive token for konsumen context to present to driver or scan driver's token
             qrData = delivery.receive_qr_token;
             type = 'RECEIVE';
         } else {
@@ -383,7 +422,7 @@ export const getOrderQR = async (req, res) => {
     }
 };
 
-// Get orders for konsumen
+// Ambil pesanan untuk konsumen
 export const getMyOrders = async (req, res) => {
     try {
         const orders = await Order.findAll({
@@ -400,7 +439,7 @@ export const getMyOrders = async (req, res) => {
     }
 };
 
-// Get deliveries for logistik
+// Ambil pengiriman untuk logistik
 export const getMyDeliveries = async (req, res) => {
     try {
         const deliveries = await Delivery.findAll({
@@ -420,7 +459,7 @@ export const getMyDeliveries = async (req, res) => {
     }
 };
 
-// Get available deliveries for logistik to pick
+// Ambil pengiriman yang tersedia untuk diambil oleh logistik
 export const getAvailableDeliveries = async (req, res) => {
     try {
         const deliveries = await Delivery.findAll({
@@ -449,24 +488,24 @@ export const getAvailableDeliveries = async (req, res) => {
     }
 };
 
-// Get orders for petambak (orders containing their products)
+// Ambil pesanan untuk petambak (pesanan yang berisi produk mereka)
 export const getPetambakOrders = async (req, res) => {
     try {
         const petambakId = req.user.id;
 
-        // Find all tambaks owned by this petambak
+        // Temukan semua tambak yang dimiliki oleh petambak ini
         const tambaks = await Tambak.findAll({ where: { petambak_id: petambakId } });
         const tambakIds = tambaks.map(t => t.id);
 
-        // Find batches from those tambaks
+        // Temukan batch dari tambak-tambak tersebut
         const batches = await BatchUdang.findAll({ where: { tambak_id: tambakIds } });
         const batchIds = batches.map(b => b.id);
 
-        // Find products from those batches
+        // Temukan produk dari batch-batch tersebut
         const products = await UdangProduk.findAll({ where: { batch_id: batchIds } });
         const productIds = products.map(p => p.id);
 
-        // Find order items containing those products
+        // Temukan item pesanan yang berisi produk-produk tersebut
         const orderItems = await OrderItem.findAll({
             where: { produk_id: productIds },
             include: [
@@ -481,7 +520,7 @@ export const getPetambakOrders = async (req, res) => {
             ]
         });
 
-        // Group by order
+        // Kelompokkan berdasarkan pesanan
         const ordersMap = {};
         for (const item of orderItems) {
             if (!ordersMap[item.order_id]) {

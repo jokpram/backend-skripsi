@@ -17,8 +17,11 @@ import upload from '../middleware/uploadMiddleware.js';
 const router = express.Router();
 
 router.post('/register/admin', registerAdmin);
-router.post('/register/petambak', registerPetambak);
-router.post('/register/logistik', registerLogistik);
+router.post('/register/petambak', upload.fields([
+    { name: 'foto_ktp', maxCount: 1 },
+    { name: 'foto_tambak', maxCount: 1 }
+]), registerPetambak);
+router.post('/register/logistik', upload.fields([{ name: 'stnk_photo', maxCount: 1 }]), registerLogistik);
 router.post('/register/konsumen', registerKonsumen);
 
 router.post('/login/admin', loginAdmin);

@@ -31,9 +31,11 @@ export const getMyWallet = async (req, res) => {
 export const requestWithdraw = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const { amount, bank_account } = req.body;
+        const { amount, bank_name, bank_account_number, bank_account_name, pin_transaction } = req.body;
         const { id, role } = req.user;
         const ownerType = role.toUpperCase();
+
+        // Opsional: Verifikasi logika PIN di sini jika pengguna memiliki PIN
 
         if (amount <= 0) {
             await t.rollback();
@@ -56,24 +58,26 @@ export const requestWithdraw = async (req, res) => {
             return res.status(400).json({ message: 'Insufficient balance' });
         }
 
-        // Deduct balance immediately (move to locked/pending?) 
-        // For simplicity: Deduct now, if rejected, refund.
+        // Kurangi saldo segera
         wallet.balance = parseFloat(wallet.balance) - parseFloat(amount);
         await wallet.save({ transaction: t });
+
+        const withdraw = await WithdrawRequest.create({
+            wallet_id: wallet.id,
+            amount,
+            bank_name,
+            bank_account_number,
+            bank_account_name,
+            status: 'PENDING',
+            metadata: { pin_used: !!pin_transaction }
+        }, { transaction: t });
 
         await WalletTransaction.create({
             wallet_id: wallet.id,
             type: 'DEBIT',
             amount: amount,
             source: 'WITHDRAWAL',
-            reference_id: 'PENDING'
-        }, { transaction: t });
-
-        const withdraw = await WithdrawRequest.create({
-            wallet_id: wallet.id,
-            amount,
-            bank_account,
-            status: 'PENDING'
+            reference_id: `REQ-${withdraw.id}`
         }, { transaction: t });
 
         await t.commit();
@@ -107,13 +111,13 @@ export const getWithdrawRequests = async (req, res) => {
 };
 
 export const processWithdraw = async (req, res) => {
-    // Admin only
+    // Hanya Admin
     if (req.user.role !== 'admin') return res.status(403).json({ message: 'Forbidden' });
 
     const t = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { action } = req.body; // 'APPROVE' or 'REJECT'
+        const { action } = req.body; // 'APPROVE' atau 'REJECT'
 
         const withdraw = await WithdrawRequest.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
         if (!withdraw) {
@@ -133,7 +137,7 @@ export const processWithdraw = async (req, res) => {
             withdraw.status = 'REJECTED';
             withdraw.processed_at = new Date();
 
-            // Refund wallet
+            // Pengembalian dana dompet
             const wallet = await Wallet.findByPk(withdraw.wallet_id, { transaction: t, lock: t.LOCK.UPDATE });
             wallet.balance = parseFloat(wallet.balance) + parseFloat(withdraw.amount);
             await wallet.save({ transaction: t });

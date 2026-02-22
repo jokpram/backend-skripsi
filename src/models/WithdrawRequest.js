@@ -19,9 +19,21 @@ const WithdrawRequest = sequelize.define('WithdrawRequest', {
         type: DataTypes.ENUM('PENDING', 'APPROVED', 'REJECTED'),
         defaultValue: 'PENDING'
     },
-    bank_account: {
+    bank_name: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    bank_account_number: {
         type: DataTypes.STRING,
         allowNull: false
+    },
+    bank_account_name: {
+        type: DataTypes.STRING,
+        allowNull: false
+    },
+    metadata: {
+        type: DataTypes.JSON,
+        allowNull: true
     },
     requested_at: {
         type: DataTypes.DATE,

@@ -1,13 +1,18 @@
 import express from 'express';
-import { getPendingUsers, verifyUser } from '../controllers/adminController.js';
+import { getPendingUsers, verifyUser, getChangeRequests, approveChangeRequest, rejectChangeRequest } from '../controllers/adminController.js';
 import { verifyToken, authorizeRoles } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Get all pending users
-router.get('/pending-users', verifyToken, authorizeRoles('admin'), getPendingUsers);
+// Semua rute perlu auth admin
+router.use(verifyToken, authorizeRoles('admin'));
 
-// Verify (approve/reject) a user
-router.post('/verify-user', verifyToken, authorizeRoles('admin'), verifyUser);
+router.get('/pending-users', getPendingUsers);
+router.post('/verify-user', verifyUser);
+
+// Manajemen Perubahan
+router.get('/change-requests', getChangeRequests);
+router.post('/change-requests/:id/approve', approveChangeRequest);
+router.post('/change-requests/:id/reject', rejectChangeRequest);
 
 export default router;

@@ -16,7 +16,7 @@ export const verifyToken = async (req, res, next) => {
 
             req.user = decoded; // { id: 1, role: 'admin' }
 
-            // Optional: Verify existence in DB if needed strictly
+            // Opsional: Verifikasi keberadaan di DB jika diperlukan secara ketat
             let userExists = null;
             if (decoded.role === 'admin') userExists = await Admin.findByPk(decoded.id);
             else if (decoded.role === 'petambak') userExists = await Petambak.findByPk(decoded.id);
@@ -27,7 +27,7 @@ export const verifyToken = async (req, res, next) => {
                 return res.status(401).json({ message: 'User not found or deactivated' });
             }
 
-            // Check account status for non-admin users
+            // Cek status akun untuk pengguna non-admin
             if (req.user.role !== 'admin' && userExists.status !== 'approved') {
                 return res.status(403).json({
                     message: 'Account not active. Please wait for admin verification.',

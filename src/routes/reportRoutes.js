@@ -4,7 +4,7 @@ import { verifyToken, isAdmin } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Only admin can generate report
+// Hanya admin yang dapat membuat laporan
 router.get('/admin', verifyToken, isAdmin, generateAdminReport);
 
 export default router;
