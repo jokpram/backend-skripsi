@@ -1,7 +1,7 @@
 node_modules/
 .env
-dist/
+.env.test
 coverage/
-logs/
-*.log
-.DS_Store
+error_log.txt
+tsc_errors.log
+uploads/
